@@ -1,181 +1,150 @@
 package com.springTemplate.springTemplate.security;
 
-import java.io.IOException;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.util.MimeTypeUtils;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.springTemplate.springTemplate.services.user.CustomUserDetails;
-
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
+import static org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR;
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
 
-/**
- * Filtre permettant de gérer la phase d'authentification
- */
+import java.io.IOException;
+import java.rmi.ServerException;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+@Slf4j
+@RequiredArgsConstructor
 public class CustomAuthenticationFilter extends UsernamePasswordAuthenticationFilter {
+    public static final String BAD_CREDENTIAL_MESSAGE = "Authentication failed for username: %s and password: %s";
 
-    private static final String BAD_CREDENTIAL_MESSAGE = "Echec de l'autentification pour l'utilisateur : %s";
+    private final AuthenticationManager authenticationManager;
 
-    private AuthenticationManager authenticationManager;
-
-    private Logger logger = LoggerFactory.getLogger(CustomAuthenticationFilter.class);
-    private Logger loggerFile = LoggerFactory.getLogger("fr.afpa.filelogger");
-
-    /**
-     * Constructeur prenant automatique en paramètre le bean de "SecurityConfig"
-     * 
-     * @param authenticationManager Bean géré par la classe "SecurityConfig"
-     */
-    public CustomAuthenticationFilter(AuthenticationManager authenticationManager) {
-        this.authenticationManager = authenticationManager;
-    }
+    @Autowired
+    private final JwtUtil jwtUtil;
 
     /**
-     * Cette méthode est appelée lors de la phase de login.
-     * Elle prend le nom d'utilisateur et le mot de passe du corps de la requête
-     * (utilisation d'un ObjetMapper pour récupérer le contenu du JSon)
+     * Tente d'effectuer l'authentification de l'utilisateur en utilisant le nom
+     * d'utilisateur et le mot de passe fournis.
      *
-     * Json devant être envoyé par le client :
-     * {
-     * "email": "<mail-utilisateur>",
-     * "password: "<password>
-     * }
+     * @param request  HttpServletRequest contenant les informations
+     *                 d'identification de l'utilisateur
+     * @param response HttpServletResponse utilisé pour envoyer la réponse
+     *                 d'authentification
+     * @return L'objet Authentication si l'authentification est réussie
+     * @throws AuthenticationException si l'authentification échoue
      */
+    @SneakyThrows
     @Override
     public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response)
             throws AuthenticationException {
-
-        String mail = null;
+        String email = null;
         String password = null;
         try {
-            // Utilisation d'un ObjectMapper pour désérialiser le json envoyé via une
-            // requête POST
+            // Lecture des données JSON de la requête et récupération de l'email et du mot
+            // de passe
             ObjectMapper objectMapper = new ObjectMapper();
             Map<String, String> map = objectMapper.readValue(request.getInputStream(), Map.class);
-            mail = map.get("mail");
+            email = map.get("email");
             password = map.get("password");
+            System.out.println(email + password);
+            log.debug("Login with email: {}", email);
 
-            logger.debug("Authentification pour l'utilisateur: {}", mail);
-            String remoteAddr = request.getHeader("X-FORWARDED-FOR");
-            if (remoteAddr == null || "".equals(remoteAddr)) {
-                remoteAddr = request.getRemoteAddr();
-            }
-
-            loggerFile.info(
-                    "Tentative de connexion pour l'utilisateur '" + mail + "' ayant pour ip : '" + remoteAddr + "'");
-
-            // création d'un objet d'une classe héritant de "Authentication"
-            // ici nous utilisons "UsernamePasswordAuthenticationToken" car la vérification
-            // se faire
-            // en utilisant le nom d'utilisateur et son mot de passe
-            // ce qui est magique c'est que c'est le "PasswordEncoder" définit dans
-            // "HostelApplication" qui va être utilisé
-            Authentication userAuthentication = new UsernamePasswordAuthenticationToken(mail, password);
-
-            // tentative d'authentification
-            return authenticationManager.authenticate(userAuthentication);
+            // Authentification de l'utilisateur avec l'email et le mot de passe fournis
+            return authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(email, password));
         } catch (AuthenticationException e) {
-            logger.error(String.format(BAD_CREDENTIAL_MESSAGE, mail), e);
+            log.error(String.format(BAD_CREDENTIAL_MESSAGE, email, password), e);
             throw e;
         } catch (Exception e) {
-            response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+            // Gestion des erreurs lors de l'authentification
+            response.setStatus(INTERNAL_SERVER_ERROR.value());
             Map<String, String> error = new HashMap<>();
             error.put("errorMessage", e.getMessage());
-            response.setContentType(MimeTypeUtils.APPLICATION_JSON_VALUE);
-
-            // écriture du message d'erreur dans la réponse
-            ObjectMapper om = new ObjectMapper();
-            try {
-                om.writeValue(response.getOutputStream(), error);
-            } catch (Exception e2) {
-                logger.debug("Erreur lors de l'écriture de la requête réponse à l'authentification utilisateur.");
-            }
-
+            response.setContentType(APPLICATION_JSON_VALUE);
+            new ObjectMapper().writeValue(response.getOutputStream(), error);
             throw new RuntimeException(
-                    String.format("Erreur lors de la tentive d'authentification avec le nom d'utilisateur %s", mail),
-                    e);
+                    String.format("Error in attemptAuthentication with email %s and password %s", email, password), e);
         }
     }
 
     /**
-     * Méthode appelée automatiquement "attemptAuthentication" est un succès.
+     * Appelé lorsque l'authentification est réussie. Génère les jetons d'accès
+     * (access token) et de rafraîchissement (refresh token)
+     * et les ajoute comme en-têtes de réponse.
+     *
+     * @param request        HttpServletRequest contenant les informations
+     *                       d'authentification
+     * @param response       HttpServletResponse utilisé pour envoyer la réponse
+     * @param chain          FilterChain utilisé pour passer la demande à travers
+     *                       d'autres filtres
+     * @param authentication L'objet Authentication contenant les informations
+     *                       d'authentification de l'utilisateur
+     * @throws IOException     en cas d'erreur lors de l'écriture de la réponse
+     * @throws ServerException si une erreur de serveur se produit
      */
     @Override
     protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain,
-            Authentication authentication) throws IOException, ServletException {
+            Authentication authentication) throws IOException, ServerException {
+        // Récupération des informations de l'utilisateur authentifié
+        User user = (User) authentication.getPrincipal();
 
-        CustomUserDetails user = (CustomUserDetails) authentication.getPrincipal();
-        // création du JWT token
-        // 1 - on récupère les roles de l'utilisateur
-        Collection<? extends GrantedAuthority> authorities = user.getAuthorities();
-
-        // 2 - on récupère une liste de chaînes de caractères indiquant les rôles de
-        // l'utilisateur
-        List<String> stringAuthorities = authorities.stream().map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toList());
-
-        Integer idUser = user.getIdUser();
-        String lastName = user.getLastName(); // Modifier pour récupérer le last_name de l'utilisateur
-        String firstName = user.getFirstName(); // Modifier pour récupérer le first_name de l'utilisateur
-        Boolean firstConnection = user.getFirstConnection();
-
-        // 3 - on crée le JWT avec le nom de l'utilisateur, l'URL du serveur fournissant
-        // le jeton et une représentaiton en chaîne de caractères
-        // des rôles
-        String accessToken = JwtUtil.createAccessToken(user.getUsername(), request.getRequestURL().toString(), idUser,
-                lastName, firstName, firstConnection, stringAuthorities);
-
-        logger.info(String.format("Création d'un token pour l'utilisateur : {}. Token : ", user.getUsername(),
-                accessToken));
-        loggerFile.info("Connexion réussi pour l'utilisateur : '" + user.getUsername() + "'");
-
-        String refreshToken = JwtUtil.createRefreshToken(user.getUsername());
-        // modification de l'en-tête de la requête de retour pour ajouter les JWT
-        response.addHeader("access_token", accessToken);
+        // Création du jeton d'accès (access token) et du jeton de rafraîchissement
+        // (refresh token)
+        String accesToken = jwtUtil.createAccessToken(user.getUsername(), request.getRequestURL().toString(),
+                user.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.toList()));
+        String refreshToken = jwtUtil.createRefreshToken(user.getUsername());
+        // Ajout des en-têtes de réponse avec les jetons
+        response.addHeader("access_token", accesToken);
         response.addHeader("refresh_token", refreshToken);
+
+        // Construction du body de la response serveur
+        response.setStatus(HttpServletResponse.SC_ACCEPTED);
+        ObjectMapper mapper = new ObjectMapper();
+        Map<String, String> role = new HashMap<>();
+        Collection<GrantedAuthority> authorities = user.getAuthorities();
+        if (!authorities.isEmpty()) {
+            String autho = authorities.iterator().next().getAuthority();
+            role.put("role", autho);
+        }
+        response.setContentType(APPLICATION_JSON_VALUE);
+        mapper.writeValue(response.getOutputStream(), role);
+
     }
 
     /**
-     * Méthode appelée lorsque "attemptAuthentication" lève une exception de type
-     * "AuthenticationException "
+     * Appelé lorsque l'authentification échoue. Définit le statut de la réponse
+     * comme non autorisé (401) et renvoie un message d'erreur JSON.
+     *
+     * @param request  HttpServletRequest contenant les informations
+     *                 d'authentification
+     * @param response HttpServletResponse utilisé pour envoyer la réponse
+     * @param failed   L'exception d'authentification ayant échoué
+     * @throws IOException     en cas d'erreur lors de l'écriture de la réponse
+     * @throws ServerException si une erreur de serveur se produit
      */
     @Override
     protected void unsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response,
-            AuthenticationException failed) throws IOException, ServletException {
-        String remoteAddr = request.getHeader("X-FORWARDED-FOR");
-        if (remoteAddr == null || "".equals(remoteAddr)) {
-            remoteAddr = request.getRemoteAddr();
-        }
-        loggerFile.info("Connexion Echoué : " + remoteAddr);
-
-        // status de la réponse : 401 = non autorisé !
+            AuthenticationException failed) throws IOException, ServerException {
+        // Gestion de l'authentification échouée
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         ObjectMapper mapper = new ObjectMapper();
-        // ajout d'un message d'erreur au corps de la réponse
         Map<String, String> error = new HashMap<>();
-        error.put("errorMessage", "Mauvaises informations de connexion");
-        response.setContentType(MimeTypeUtils.APPLICATION_JSON_VALUE);
-
-        // écriture de l'erreur dans le corps de la réponse
+        error.put("errorMessage", "Bad credential");
+        response.setContentType(APPLICATION_JSON_VALUE);
         mapper.writeValue(response.getOutputStream(), error);
     }
 

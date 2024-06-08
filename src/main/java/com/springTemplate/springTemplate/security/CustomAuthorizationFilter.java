@@ -1,78 +1,73 @@
 package com.springTemplate.springTemplate.security;
 
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.util.MimeTypeUtils;
-import org.springframework.web.filter.OncePerRequestFilter;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+import static org.springframework.http.HttpHeaders.AUTHORIZATION;
+import static org.springframework.http.HttpStatus.FORBIDDEN;
+import static org.springframework.util.MimeTypeUtils.APPLICATION_JSON_VALUE;
 
 /**
- * Classe gérant la phase de validation des droits de l'utilisateur (ou
- * "Authorization").
- *
- * Son objectif est de lire le JWT fourni par l'utilisateur et valider son bon
- * fonctionnement.
+ * Filtre personnalisé pour l'autorisation des requêtes.
+ * Ce filtre vérifie le jeton d'authentification dans l'en-tête de la requête
+ * et effectue les opérations d'authentification et d'autorisation nécessaires.
  */
+@Slf4j
+@RequiredArgsConstructor
 public class CustomAuthorizationFilter extends OncePerRequestFilter {
 
-    private Logger logger = LoggerFactory.getLogger(CustomAuthorizationFilter.class);
+    @Autowired
+    private final JwtUtil jwtUtil;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
-            throws ServletException, IOException {
-
+            throws IOException, ServletException {
         String token = null;
-        // si le requête s'effectue sur les endpoints "/login" ou "/refreshToken"
-        // alors on appelle le filtre de sécurité suivant : CustomAuthenticationFiler
-        if (request.getServletPath().equals("/login") || request.getServletPath().equals("/refreshToken")) {
 
-            // SimpleGrantedAuthority authorities = new SimpleGrantedAuthority("ROLE_USER");
-            // SecurityContextHolder.getContext().setAuthentication(new
-            // UsernamePasswordAuthenticationToken("test", null,
-            // Arrays.asList(authorities)));
-            filterChain.doFilter(request, response);
+        // Vérifie si le chemin de la requête est "/login" ou "/refreshToken"
+        // Ces chemins sont exclus de l'authentification
+        if (request.getServletPath().equals("/login") || request.getServletPath().equals("/refreshToken")) {
+            filterChain.doFilter(request, response); // Passe au filtre suivant
         } else {
-            // si le client fait un appel à autre chose que "/login" ou "/refreshToken"
-            // alors on se retrouve ici
-            // on récupère le contenu du header
-            String authorizationHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+            String authorizationHeader = request.getHeader(AUTHORIZATION);
             if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
                 try {
-                    // le fameux token contient "Bearer", on s'en débarasse
+                    // Extrait le jeton d'authentification de l'en-tête
                     token = authorizationHeader.substring("Bearer ".length());
-                    // on parse le token
-                    UsernamePasswordAuthenticationToken authenticationToken = JwtUtil.parseToken(token);
-                    SecurityContextHolder.getContext().setAuthentication(authenticationToken);
-                    // on enchaîne avec le prochain filtre
-                    filterChain.doFilter(request, response);
-                } catch (Exception e) {
-                    logger.error(String.format("Erreur avec le JWT suivant : %s", token), e);
-                    response.setStatus(HttpStatus.FORBIDDEN.value());
 
-                    // construction du message qui est renvoyé à l'utilisateur
+                    // Analyse et valide le jeton d'authentification
+                    UsernamePasswordAuthenticationToken authenticationToken = jwtUtil.parseToken(token);
+
+                    // Définit l'authentification de l'utilisateur dans le contexte de sécurité
+                    SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+
+                    filterChain.doFilter(request, response); // Passe au filtre suivant
+                } catch (Exception e) {
+                    log.error(String.format("Error auth token: %s", token), e);
+
+                    // En cas d'erreur lors de la validation du jeton d'authentification
+                    response.setStatus(FORBIDDEN.value());
                     Map<String, String> error = new HashMap<>();
                     error.put("errorMessage", e.getMessage());
-                    response.setContentType(MimeTypeUtils.APPLICATION_JSON_VALUE);
-
+                    response.setContentType(APPLICATION_JSON_VALUE);
                     new ObjectMapper().writeValue(response.getOutputStream(), error);
                 }
             } else {
-                // on enchaîne avec le prochain filtre
-                filterChain.doFilter(request, response);
+                filterChain.doFilter(request, response); // Passe au filtre suivant
             }
         }
     }
