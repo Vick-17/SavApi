@@ -33,15 +33,15 @@ public class JwtUtil {
     /**
      * Crée un token d'accès JWT.
      *
-     * @param email  L'e-mail de l'utilisateur
+     * @param username  L'e-mail de l'utilisateur
      * @param issuer L'émetteur (issuer) du token
      * @param roles  La liste des rôles associés à l'utilisateur
      * @return Le token d'accès JWT créé
      */
-    public String createAccessToken(String email, String issuer, List<String> roles) {
+    public String createAccessToken(String username, String issuer, List<String> roles) {
         try {
             JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                    .subject(email)
+                    .subject(username)
                     .issuer(issuer)
                     .claim("roles", roles)
                     .expirationTime(Date.from(Instant.now().plusSeconds(expireHourToken * 3600)))

@@ -39,18 +39,18 @@ public class UserService implements UserDetailsService {
      */
     @Override
     @Transactional
-    public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         // ATTENTION -> objet de la classe "fr.afpahostel.models.User"
-        User user = userRepository.findByEmail(email);
+        User user = userRepository.findByUsername(username);
         if (user == null) {
             // pas d'utilisateur, on renvoie une exception
-            String message = String.format(USER_NOT_FOUND_MESSAGE, email);
+            String message = String.format(USER_NOT_FOUND_MESSAGE, username);
             logger.error(message);
             throw new UsernameNotFoundException(message);
         } else {
             // utilisateur retrouvé, on instancie une liste d' "authorities" qui
             // correspondent à des roles
-            logger.debug(USER_FOUND_MESSAGE, email);
+            logger.debug(USER_FOUND_MESSAGE, username);
             Collection<SimpleGrantedAuthority> authorities = new ArrayList<>();
             user.getRoles().forEach(role -> {
                 authorities.add(new SimpleGrantedAuthority(role.getName()));
@@ -62,7 +62,7 @@ public class UserService implements UserDetailsService {
              * Cette classe hérite de "UserDetails" et est propre au framework de sécurité
              * de Spring.
              */
-            return new org.springframework.security.core.userdetails.User(user.getName(), user.getPassword(),
+            return new org.springframework.security.core.userdetails.User(user.getUsername(), user.getPassword(),
                     authorities);
         }
     }

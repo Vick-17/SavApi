@@ -15,6 +15,8 @@ import com.springTemplate.springTemplate.models.User;
 import com.springTemplate.springTemplate.models.Role;
 import com.springTemplate.springTemplate.repositories.RoleRepository;
 import com.springTemplate.springTemplate.repositories.UserRepository;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 import lombok.RequiredArgsConstructor;
 
@@ -29,21 +31,22 @@ public class UserController {
     @Autowired
     private RoleRepository roleRepository;
 
-    @PostMapping(value = "/inscriptionAdmin", consumes = "application/json")
+    @PostMapping(value = "/inscription", consumes = "application/json")
     @ResponseStatus(HttpStatus.CREATED)
     public User createAdmin(@RequestBody User users) {
-        User existingUser = userRepository.findByEmail(users.getEmail());
+        User existingUser = userRepository.findByUsername(users.getUsername());
         if (existingUser != null) {
             throw new RuntimeException("L'adresse e-mail est déjà utilisée.");
         }
         BCryptPasswordEncoder bCryptPasswordEncoder = new BCryptPasswordEncoder();
         String passwordEncode = bCryptPasswordEncoder.encode(users.getPassword());
         users.setPassword(passwordEncode);
-        Role userRole = roleRepository.findByName("ROLE_ADMIN");
+        Role userRole = roleRepository.findByName("ROLE_USER");
         if (userRole == null) {
             throw new RuntimeException("Role introuvable");
         }
         users.getRoles().add(userRole);
+        users.setPoints(100);
         return userRepository.save(users);
     }
 

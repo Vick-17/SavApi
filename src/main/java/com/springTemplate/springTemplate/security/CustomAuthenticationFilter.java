@@ -52,22 +52,22 @@ public class CustomAuthenticationFilter extends UsernamePasswordAuthenticationFi
     @Override
     public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response)
             throws AuthenticationException {
-        String email = null;
+        String username = null;
         String password = null;
         try {
-            // Lecture des données JSON de la requête et récupération de l'email et du mot
+            // Lecture des données JSON de la requête et récupération de l'username et du mot
             // de passe
             ObjectMapper objectMapper = new ObjectMapper();
             Map<String, String> map = objectMapper.readValue(request.getInputStream(), Map.class);
-            email = map.get("email");
+            username = map.get("username");
             password = map.get("password");
-            System.out.println(email + password);
-            log.debug("Login with email: {}", email);
+            System.out.println(username + password);
+            log.debug("Login with username: {}", username);
 
-            // Authentification de l'utilisateur avec l'email et le mot de passe fournis
-            return authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(email, password));
+            // Authentification de l'utilisateur avec l'username et le mot de passe fournis
+            return authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(username, password));
         } catch (AuthenticationException e) {
-            log.error(String.format(BAD_CREDENTIAL_MESSAGE, email, password), e);
+            log.error(String.format(BAD_CREDENTIAL_MESSAGE, username, password), e);
             throw e;
         } catch (Exception e) {
             // Gestion des erreurs lors de l'authentification
@@ -77,7 +77,7 @@ public class CustomAuthenticationFilter extends UsernamePasswordAuthenticationFi
             response.setContentType(APPLICATION_JSON_VALUE);
             new ObjectMapper().writeValue(response.getOutputStream(), error);
             throw new RuntimeException(
-                    String.format("Error in attemptAuthentication with email %s and password %s", email, password), e);
+                    String.format("Error in attemptAuthentication with username %s and password %s", username, password), e);
         }
     }
 
